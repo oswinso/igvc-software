@@ -16,6 +16,13 @@ private:
   void info_img_callback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& cam_info);
   void img_callback(const cv::Mat msg, const sensor_msgs::ImageConstPtr& origMsg);
 
+  void initLineDetection();
+
+  void DetectLines(int lineThickness);
+  void WhitenessFilter(cv::Mat& hsv_image, cv::Mat& result);
+  void MultiplyByComplements(cv::Mat* images, cv::Mat* complements, cv::Mat* results);
+  void EnforceLength(cv::Mat& img, int length, std::vector<std::vector<cv::Point>>& contoursThreshold);
+
   // ROS COMMUNICATION
   image_transport::ImageTransport _it;
   std::string topic;
@@ -33,6 +40,19 @@ private:
   int houghMinLineLength;
   int houghMaxLineGap;
   int maxDistance;
+
+  // line thickness in pixels
+  int lineThickness;
+  // line threshold to continue
+  int lineLengthThreshold;
+
+  const int linewidthpixels = 13;
+
+  cv::Mat dst_img;
+  cv::Mat kernels[KERNAL_COUNT];
+  cv::Mat kernelComplements[KERNAL_COUNT];
+  cv::Mat kernelResults[KERNAL_COUNT];
+  cv::Mat complementResults[KERNAL_COUNT];
 };
 
 #endif  // LINEDETECTOR_H
