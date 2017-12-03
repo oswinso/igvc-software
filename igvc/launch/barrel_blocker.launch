@@ -1,0 +1,7 @@
+<!-- barrel_blocker.launch -->
+<launch>
+    <!-- Lidar Node -->
+
+        <node name="barrel_blocker" pkg="igvc" type="barrel_blocker" output="screen" />
+
+</launch>
