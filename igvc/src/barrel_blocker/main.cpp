@@ -1,11 +1,5 @@
-#include <cmath>
 #include <mutex>
-#include <queue>
-#include <stdlib.h>
-#include <unordered_set>
-#include <vector>
 
-#include <boost/functional/hash.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <image_transport/image_transport.h>
@@ -79,10 +73,10 @@ void barrelBlocker(cv::Mat& image, const cv::Point3d& cv_point, const cv::Point2
       break;
     }
   }
-  int ymin = cam_point.y - 0.5 * (xmax - xmin);
-  int ymax = cam_point.y + (xmax - xmin);
-  xmin -= 15;
-  xmax += 15;
+  int ymin = cam_point.y - 0.8 * (xmax - xmin);
+  int ymax = cam_point.y + 1.4 * (xmax - xmin);
+  xmin -= (xmax - xmin) * 0.05;
+  xmax += (xmax - xmin) * 0.05;
   if (xmin < 0) {
     xmin = 0;
     ymin = 0;
