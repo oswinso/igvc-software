@@ -16,6 +16,9 @@
 #include <unordered_map>
 #include <utility>
 
+#include <sensor_msgs/PointCloud.h>
+#include <sensor_msgs/point_cloud_conversion.h>
+
 struct WatchedPointcloud
 {
   std::string topic_name;
@@ -47,7 +50,6 @@ void filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input, const std::string &top
   // Retrieve pointcloud list pointer from unordered map
   auto current_watched = topic_pc_map.find(topic)->second;
   std::list<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> *pointcloud_list = current_watched->window;
-
   if (pointcloud_list->size() < static_cast<unsigned int>(current_watched->window_size))
   {
     // icp
@@ -109,7 +111,6 @@ void filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input, const std::string &top
         }
       }
     }
-
     (*local_pc).header.frame_id = "/odom";
     _pointcloud_prob_pub.publish(*local_pc);
 
@@ -126,14 +127,19 @@ void filter(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input, const std::string &top
 
 void frame_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &msg, const std::string &topic)
 {
+  ROS_INFO_STREAM("frame callback 1");
   pcl::PointCloud<pcl::PointXYZ>::Ptr transformed =
       pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>());
   tf::StampedTransform transform;
   ros::Time time = pcl_conversions::fromPCL(msg->header.stamp);
   if (tf_listener->waitForTransform("/odom", msg->header.frame_id, time, ros::Duration(5.0)))
   {
+    ROS_INFO_STREAM("if statement");
     tf_listener->lookupTransform("/odom", msg->header.frame_id, time, transform);
+    tf::StampedTransform transform2;
+    tf_listener->lookupTransform("/odom", msg->header.frame_id, ros::Time(0), transform2);
     pcl_ros::transformPointCloud(*msg, *transformed, transform);
+    ROS_INFO_STREAM(transform.getOrigin().getX() << "," << transform2.getOrigin().getX());
     for (auto point : *transformed)
     {
       point.z = 0;
@@ -153,13 +159,37 @@ void frame_callback(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &msg, const s
   }
 }
 
+
+
+void frame_callback2(const sensor_msgs::PointCloud::ConstPtr &msg)
+{
+  ROS_INFO_STREAM("FRAME_CALLBACK2");
+  sensor_msgs::PointCloud2 msg_conv;
+  sensor_msgs::convertPointCloudToPointCloud2(*msg, msg_conv);
+  pcl::PCLPointCloud2 pcl_pc2;
+  pcl_conversions::toPCL(msg_conv, pcl_pc2);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>());
+  pcl::fromPCLPointCloud2(pcl_pc2, *cloud);
+  pcl_conversions::toPCL(msg->header.stamp, cloud->header.stamp);
+  frame_callback(cloud, "/semantic_segmentation_cloud");
+}
+
+
+
+
+
+
+
+
+
+
 int main(int argc, char **argv)
 {
   global_map = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(new pcl::PointCloud<pcl::PointXYZRGB>());
 
   ros::init(argc, argv, "global_mapper");
   ros::NodeHandle nh;
-  tf_listener = new tf::TransformListener();
+  tf_listener = new tf::TransformListener(ros::Duration(20), true);
 
   std::string topics;
   std::list<ros::Subscriber> subs;
@@ -196,6 +226,8 @@ int main(int argc, char **argv)
   for (std::string topic : tokens)
   {
     ROS_INFO_STREAM("Mapper subscribing to " << topic);
+    ROS_INFO_STREAM(topic);
+    if (topic != "/semantic_segmentation_cloud")
     subs.push_back(nh.subscribe<pcl::PointCloud<pcl::PointXYZ>>(topic, 1, boost::bind(frame_callback, _1, topic)));
     std::shared_ptr<WatchedPointcloud> current = std::make_shared<WatchedPointcloud>();
     current->topic_name = topic;
@@ -205,6 +237,8 @@ int main(int argc, char **argv)
     topic_pc_map.insert({ topic, current });
     count++;
   }
+
+  ros::Subscriber image_sub = nh.subscribe<sensor_msgs::PointCloud>("/semantic_segmentation_cloud", 1, frame_callback2);
 
   global_map->header.frame_id = "/odom";
 

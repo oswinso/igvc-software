@@ -5,7 +5,7 @@ from image_geometry import PinholeCameraModel
 import tf as ros_tf
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
-from sensor_msgs.msg import PointCloud
+from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Point32
 from cv_bridge import CvBridge, CvBridgeError
 import scipy
