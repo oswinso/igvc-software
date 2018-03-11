@@ -1,0 +1,34 @@
+<!-- mapping.launch -->
+<launch>
+  <!-- <include file="$(find igvc)/launch/o_grid_mapper.launch"/> -->
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap_" respawn="true" output="screen" >
+    <!-- resolution of the map (meters)" -->
+    <param name="resolution" value=".05"/>
+    <param name="frame_id" value="/odom"/>
+    <!-- id of frame where ground plance detection is performed" -->
+    <param name="base_frame_id" value="base_footprint"/>
+    <!-- Whether visualization encodes height with colors -->
+    <param name="height_map" value="false"/>
+    <!-- Color for visualizing occupied cells when height_map=False, range=[0:1] -->
+    <param name="color/[r/g/b/a]" value="255.0/"/>
+    <!-- maximum range (meters) for inserting point cloud data into map -->
+    <param name="sensor_model/max_range" value="15"/>
+    <!-- probabilities for hits and misses in the sensor model when building a map -->
+    <param name="sensor_model/[hit|miss]" value="0.7/0.4"/>
+    <!-- minimum and maximum probability for clamping when dynamically building a map -->
+    <param name="sensor_model/[min|max]" value="0.12/.97"/>
+    <!-- whether topics are published latched for only once per change.
+          for more performance set to false -->
+    <param name="latch" value="True"/>
+    <!-- whether the ground plane should be detected. -->
+    <param name="filter_ground" value="false"/>
+    <!-- distance threshold for object to be segmented to the gound -->
+    <param name="ground_filter/distance" value=".04"/>
+    <!-- minimum and maximum heights for points to be considered in the callback. Default is +/- inf -->
+    <!-- <param name="pointcloud_[min|max]_z"/> -->
+    <!-- minimum and maximum heights to be considered in final map. Default is +/- inf -->
+    <!-- <param name="occupancy_[max|min]_z" value="" /> -->
+  </node>
+  <node pkg="igvc" type="o_grid_mapper" name="o_grid_mapper" respawn="true" output="screen">
+  </node>
+</launch>
