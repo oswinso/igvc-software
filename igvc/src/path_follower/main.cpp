@@ -11,7 +11,8 @@
 #include <iostream>
 #include <mutex>
 
-const float threshold = 0.1;
+const float proximity_threshold = 0.1;
+const float turning_threshold = M_PI / 2;
 
 ros::Publisher cmd_pub;
 
@@ -32,33 +33,22 @@ void path_callback(const nav_msgs::PathConstPtr& msg)
 
 void get_wheel_speeds(igvc_msgs::velocity_pair& vel, double d, double theta)
 {
-  if (theta > M_PI + threshold)
-  {
-    theta -= 2 * M_PI;
-  }
-  else if (theta < -M_PI - threshold)
-  {
-    theta += 2 * M_PI;
-  }
-
-  if (std::abs(theta) < threshold)
+  if (std::abs(theta) < proximity_threshold)
   {
     vel.left_velocity = max_vel;
     vel.right_velocity = max_vel;
     return;
   }
-  if (theta > M_PI / 4 || theta < -M_PI / 4)
+  else if (theta > turning_threshold)
   {
-    if (theta > 0)
-    {
-      vel.left_velocity = -max_vel;
-      vel.right_velocity = max_vel;
-    }
-    else
-    {
-      vel.left_velocity = max_vel;
-      vel.right_velocity = -max_vel;
-    }
+    vel.left_velocity = max_vel;
+    vel.right_velocity = -max_vel;
+    return;
+  }
+  else if (theta < -turning_threshold)
+  {
+    vel.left_velocity = -max_vel;
+    vel.right_velocity = max_vel;
     return;
   }
 
@@ -68,18 +58,19 @@ void get_wheel_speeds(igvc_msgs::velocity_pair& vel, double d, double theta)
   
   if (theta > 0)
   {
-    vel.left_velocity = inner_wheel;
-    vel.right_velocity = outer_wheel;
+    vel.left_velocity = outer_wheel;
+    vel.right_velocity = inner_wheel;
   }
   else
   {
-    vel.left_velocity = outer_wheel;
-    vel.right_velocity = inner_wheel;
+    vel.left_velocity = inner_wheel;
+    vel.right_velocity = outer_wheel;
   }
 }
 
 void position_callback(const nav_msgs::OdometryConstPtr& msg)
 {
+  std::lock_guard<std::mutex> lock(path_mutex);
   if (path.get() == nullptr)
   {
     return;
@@ -99,13 +90,16 @@ void position_callback(const nav_msgs::OdometryConstPtr& msg)
   float cur_y = msg->pose.pose.position.y;
   tf::Quaternion q;
   tf::quaternionMsgToTF(msg->pose.pose.orientation, q);
-  float cur_theta = -tf::getYaw(q) + M_PI / 2;
-  cur_theta = cur_theta > 2 * M_PI ? cur_theta - 2 * M_PI : cur_theta;
+  float cur_theta = tf::getYaw(q);
     
+  std::cerr << "Robot: x=" << std::to_string(cur_x) << ", y=" << std::to_string(cur_y) << ", theta=" << std::to_string(cur_theta) << std::endl;
+
   float tar_x = path->poses[path_index].pose.position.x;
   float tar_y = path->poses[path_index].pose.position.y;
 
-  while (std::abs(cur_x - tar_x) + std::abs(cur_y - tar_y) < threshold)
+  std::cerr << "Waypoint: x=" << std::to_string(tar_x) << ", y=" << std::to_string(tar_y) << std::endl;
+
+  while (std::abs(cur_x - tar_x) + std::abs(cur_y - tar_y) < proximity_threshold)
   {
     ++path_index;
     if (path_index == path->poses.size())
@@ -119,12 +113,14 @@ void position_callback(const nav_msgs::OdometryConstPtr& msg)
   }
 
   double d = std::sqrt(std::pow(tar_x - cur_x, 2) + std::pow(tar_y - cur_y, 2));
-  double ang = std::atan2(tar_x - cur_x, tar_y - cur_y);
-  ang = ang < 0 ? ang + 2 * M_PI : ang;
+  double ang = std::atan2(tar_y - cur_y, tar_x - cur_x);
   double theta = cur_theta - ang;
+
+  std::cerr << "Trajectory: d=" << std::to_string(d) << ", ang=" << std::to_string(ang) << ", theta=" << std::to_string(theta) << std::endl;
 
   igvc_msgs::velocity_pair vel;
   get_wheel_speeds(vel, d, theta);
+  std::cerr << "Speeds: left=" << std::to_string(vel.left_velocity) << ", right=" << std::to_string(vel.right_velocity) << std::endl;
 
   cmd_pub.publish(vel);
 }
