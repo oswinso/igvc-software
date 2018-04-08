@@ -1,3 +1,6 @@
+add_executable(node main.cpp)
 add_executable(filter_lidar main.cpp)
+add_dependencies(node igvc_msgs_gencpp)
 add_dependencies(filter_lidar igvc_msgs_gencpp)
+target_link_libraries(node ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(filter_lidar ${catkin_LIBRARIES} ${PCL_LIBRARIES})
