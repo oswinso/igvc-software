@@ -1,12 +1,11 @@
 #define _USE_MATH_DEFINES
 
-#include <igvc_msgs/lights.h>
+#include <Eigen/Dense>
 #include <igvc_msgs/velocity_pair.h>
-#include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
+#include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 #include <tf/transform_datatypes.h>
-#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <mutex>
@@ -15,20 +14,18 @@ const float proximity_threshold = 0.1;
 const float turning_threshold = M_PI / 2;
 
 ros::Publisher cmd_pub;
+ros::Publisher target_pub;
 
 nav_msgs::PathConstPtr path;
-std::mutex path_mutex;
 
-size_t path_index = 0;
+double path_resolution;
 
-double max_vel, axle_length;
+double max_vel, axle_length, lookahead_dist, threshold;
 
 void path_callback(const nav_msgs::PathConstPtr& msg)
 {
-  std::lock_guard<std::mutex> lock(path_mutex);
   ROS_INFO("Follower got path");
   path = msg;
-  path_index = 0;
 }
 
 void get_wheel_speeds(igvc_msgs::velocity_pair& vel, double d, double theta)
@@ -55,7 +52,7 @@ void get_wheel_speeds(igvc_msgs::velocity_pair& vel, double d, double theta)
   double turn_radius = std::abs(d / (2 * std::sin(theta)));
   double outer_wheel = max_vel;
   double inner_wheel = outer_wheel * (turn_radius - (axle_length / 2)) / (turn_radius + (axle_length / 2));
-  
+
   if (theta > 0)
   {
     vel.left_velocity = outer_wheel;
@@ -68,6 +65,10 @@ void get_wheel_speeds(igvc_msgs::velocity_pair& vel, double d, double theta)
   }
 }
 
+double get_distance(double x1, double y1, double x2, double y2) {
+  return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+}
+
 void position_callback(const nav_msgs::OdometryConstPtr& msg)
 {
   std::lock_guard<std::mutex> lock(path_mutex);
@@ -75,7 +76,7 @@ void position_callback(const nav_msgs::OdometryConstPtr& msg)
   {
     return;
   }
-  if (path->poses.empty() || path_index == path->poses.size())
+  if (path->poses.empty())
   {
     ROS_INFO("Path empty.");
     igvc_msgs::velocity_pair vel;
@@ -91,37 +92,61 @@ void position_callback(const nav_msgs::OdometryConstPtr& msg)
   tf::Quaternion q;
   tf::quaternionMsgToTF(msg->pose.pose.orientation, q);
   float cur_theta = tf::getYaw(q);
-    
-  std::cerr << "Robot: x=" << std::to_string(cur_x) << ", y=" << std::to_string(cur_y) << ", theta=" << std::to_string(cur_theta) << std::endl;
 
-  float tar_x = path->poses[path_index].pose.position.x;
-  float tar_y = path->poses[path_index].pose.position.y;
-
-  std::cerr << "Waypoint: x=" << std::to_string(tar_x) << ", y=" << std::to_string(tar_y) << std::endl;
-
-  while (std::abs(cur_x - tar_x) + std::abs(cur_y - tar_y) < proximity_threshold)
+  float tar_x, tar_y;
+  geometry_msgs::Point end = path->poses[path->poses.size() - 1].pose.position;
+  if (get_distance(cur_x, cur_y, end.x, end.y) > lookahead_dist)
   {
-    ++path_index;
-    if (path_index == path->poses.size())
+    ROS_INFO("got here");
+    double path_index = 0;
+    double distance = 0;
+    bool cont = true;
+    while (cont && path_index < path->poses.size() - 1)
     {
-      // relying on the next odom update to stop the robot
-      // if odom is slow, this may overshoot the target
-      return;
+      geometry_msgs::Point point1 = path->poses[path_index].pose.position;
+      geometry_msgs::Point point2 = path->poses[path_index + 1].pose.position;
+      double increment = get_distance(point1.x, point1.y, point2.x, point2.y);
+      if (distance + increment >lookahead_dist)
+      {
+        cont = false;
+        Eigen::Vector3d first(point1.x,point1.y, 0);
+        Eigen::Vector3d second(point2.x,point2.y, 0);
+        Eigen::Vector3d slope = second - first;
+        slope *= lookahead_dist;
+        slope += first;
+        tar_x = slope[0];
+        tar_y = slope[1];
+      }
+      else
+      {
+        path_index++;
+        distance += increment;
+      }
     }
-    tar_x = path->poses[path_index].pose.position.x;
-    tar_y = path->poses[path_index].pose.position.y;
+  }
+  else
+  {
+    ROS_INFO("else");
+    tar_x = end.x;
+    tar_y = end.y;
   }
 
-  double d = std::sqrt(std::pow(tar_x - cur_x, 2) + std::pow(tar_y - cur_y, 2));
+  geometry_msgs::PointStamped target_point;
+  target_point.point.x = tar_x;
+  target_point.point.y = tar_y;
+  target_point.header.frame_id = "/odom";
+  target_point.header.stamp = ros::Time::now();
+  target_pub.publish(target_point);
+
+
+  double d = get_distance(cur_x, cur_y, tar_x, tar_y);
   double ang = std::atan2(tar_y - cur_y, tar_x - cur_x);
   double theta = cur_theta - ang;
 
-  std::cerr << "Trajectory: d=" << std::to_string(d) << ", ang=" << std::to_string(ang) << ", theta=" << std::to_string(theta) << std::endl;
-
   igvc_msgs::velocity_pair vel;
   get_wheel_speeds(vel, d, theta);
-  std::cerr << "Speeds: left=" << std::to_string(vel.left_velocity) << ", right=" << std::to_string(vel.right_velocity) << std::endl;
 
+  ROS_INFO_STREAM(vel.left_velocity << ", " << vel.right_velocity);
   cmd_pub.publish(vel);
 }
 
@@ -129,22 +154,20 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "path_follower");
 
-  ros::NodeHandle n;
+  ros::NodeHandle nh;
+  ros::NodeHandle pNh("~");
 
-  n.param(std::string("max_vel"), max_vel, 1.6);
-  n.param(std::string("axle_length"), axle_length, 0.8);
+  pNh.param(std::string("max_vel"), max_vel, 1.6);
+  pNh.param(std::string("axle_length"), axle_length, 0.52);
+  pNh.param(std::string("lookahead_dist"), lookahead_dist, 0.8);
 
-  cmd_pub = n.advertise<igvc_msgs::velocity_pair>("/motors", 1);
+  cmd_pub = nh.advertise<igvc_msgs::velocity_pair>("/motors", 1);
+  target_pub = nh.advertise<geometry_msgs::PointStamped>("/target_point", 1);
 
-  ros::Publisher lights_pub = n.advertise<igvc_msgs::lights>("/lights", 1);
+  ros::Subscriber path_sub = nh.subscribe("/path_display", 1, path_callback);
 
-  ros::Subscriber path_sub = n.subscribe("/path_display", 1, path_callback);
+  ros::Subscriber pose_sub = nh.subscribe("/odometry/filtered", 1, position_callback);
 
-  ros::Subscriber pose_sub = n.subscribe("/odometry/filtered", 1, position_callback);
-
-  igvc_msgs::lights lights_cmd;
-  lights_cmd.safety_flashing = true;
-  lights_pub.publish(lights_cmd);
 
   ros::spin();
 
