@@ -102,9 +102,8 @@ void Particle_filter::initialize_particles(const tf::Transform &pose)
 //  fuckOcc.publish(debug_pcl2);
 //}
 
-void Particle_filter::update(const tf::Transform &diff, const geometry_msgs::TwistWithCovariance &twist,
-                             const ros::Duration delta_t, const pcl::PointCloud<pcl::PointXYZ> &pc,
-                             const tf::Transform &lidar_to_base)
+void Particle_filter::update(const tf::Transform &delta_pose, const ros::Duration &delta_t,
+                             const pcl::PointCloud<pcl::PointXYZ> &pc, const tf::Transform &lidar_to_base)
 {
   // Set lidar to base transformation if not set
   m_octomapper.set_lidar_to_base(lidar_to_base);
@@ -146,13 +145,8 @@ void Particle_filter::update(const tf::Transform &diff, const geometry_msgs::Twi
   if (nonground->size() >= m_scanmatch_point_thresh && m_use_scanmatch)
   {
     tf::Transform scanmatch_transform;
-    tf::Transform guess;
-    guess.setOrigin(tf::Vector3(twist.twist.linear.x * delta_t.toSec(), twist.twist.linear.y * delta_t.toSec(), 0));
-    tf::Matrix3x3 rot;
-    rot.setRPY(0, 0, twist.twist.angular.z * delta_t.toSec());
-    guess.setBasis(rot);
     nonground->header.frame_id = "/base_link";
-    fitness = m_scanmatcher.scanmatch(nonground, scanmatch_transform, guess);
+    fitness = m_scanmatcher.scanmatch(nonground, scanmatch_transform, delta_pose);
     if (fitness != -1)
     {
       scanmatch_motion_model = scanmatch_transform;
@@ -205,25 +199,17 @@ void Particle_filter::update(const tf::Transform &diff, const geometry_msgs::Twi
     Particle particle{};
     if (fitness == -1)
     {
-      if (iterations < 10 ||
-          (fabs(twist.twist.linear.x) < m_thresh_still && fabs(twist.twist.linear.y) < m_thresh_still && fabs(twist.twist.angular.z) < m_thresh_still))
+      if (iterations < 10)
       {
-        noisy_x = 0;
-        noisy_y = 0;
-        noisy_yaw = 0;
+        iterations++;
       }
       else
       {
-        noisy_x = twist.twist.linear.x + gauss(m_variance_x);
-        noisy_y = twist.twist.linear.y + gauss(m_variance_y);
-        noisy_yaw = twist.twist.angular.z + gauss(m_variance_yaw);
+        particle.state.transform *= delta_pose;
+        particle.state.set_x(m_particles[i].state.x() + delta_t.toSec() * gauss(m_variance_x));
+        particle.state.set_y(m_particles[i].state.y() + delta_t.toSec() * gauss(m_variance_y));
+        particle.state.set_yaw(m_particles[i].state.yaw() + delta_t.toSec() * gauss(m_variance_yaw));
       }
-      double cur_yaw = m_particles[i].state.yaw();
-      double new_x = noisy_x * cos(cur_yaw) - noisy_y * sin(cur_yaw);
-      double new_y = noisy_x * sin(cur_yaw) + noisy_y * cos(cur_yaw);
-      particle.state.set_x(m_particles[i].state.x() + delta_t.toSec() * new_x);
-      particle.state.set_y(m_particles[i].state.y() + delta_t.toSec() * new_y);
-      particle.state.set_yaw(m_particles[i].state.yaw() + delta_t.toSec() * noisy_yaw);
     }
     else
     {

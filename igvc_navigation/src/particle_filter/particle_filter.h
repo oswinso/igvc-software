@@ -2,12 +2,12 @@
 #ifndef PROJECT_PARTICLE_FILTER_H
 #define PROJECT_PARTICLE_FILTER_H
 
+#include <geometry_msgs/TwistWithCovariance.h>
 #include <std_msgs/Float64.h>
-#include <igvc_utils/RobotState.hpp>
-#include "igvc_navigation/hsluv.h"
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
-#include <geometry_msgs/TwistWithCovariance.h>
+#include <igvc_utils/RobotState.hpp>
+#include "igvc_navigation/hsluv.h"
 
 #include <random>
 #include "octomapper.h"
@@ -17,12 +17,15 @@ struct Particle
 {
   RobotState state;
   pc_map_pair pair;
-  float weight{0};
-  Particle(const Particle& p) : state{p.state}, pair{}, weight(p.weight) {
+  float weight{ 0 };
+  Particle(const Particle& p) : state{ p.state }, pair{}, weight(p.weight)
+  {
     pair.octree = std::unique_ptr<octomap::OcTree>(new octomap::OcTree(*p.pair.octree));
     pair.map = nullptr;
   }
-  Particle() : state{}, pair{}, weight{1} {}
+  Particle() : state{}, pair{}, weight{ 1 }
+  {
+  }
 };
 
 class Particle_filter
@@ -30,20 +33,37 @@ class Particle_filter
 public:
   Particle_filter(const ros::NodeHandle& pNh);
   void initialize_particles(const tf::Transform& pose);
-  void update(const tf::Transform& diff, const geometry_msgs::TwistWithCovariance& twist, const ros::Duration delta_t,
-                               const pcl::PointCloud<pcl::PointXYZ>& pc, const tf::Transform& lidar_to_base);
-  int length_x() { return m_octomapper.length_x(); }
-  int width_y() { return m_octomapper.width_y(); }
-  int start_x() { return m_octomapper.start_x(); }
-  int start_y() { return m_octomapper.start_y(); }
-  double resolution() { return m_octomapper.resolution(); }
+  void update(const tf::Transform& delta_pose, const ros::Duration& delta_t,
+                               const pcl::PointCloud<pcl::PointXYZ>& pc,
+                               const tf::Transform& lidar_to_base);
+  int length_x()
+  {
+    return m_octomapper.length_x();
+  }
+  int width_y()
+  {
+    return m_octomapper.width_y();
+  }
+  int start_x()
+  {
+    return m_octomapper.start_x();
+  }
+  int start_y()
+  {
+    return m_octomapper.start_y();
+  }
+  double resolution()
+  {
+    return m_octomapper.resolution();
+  }
   int m_best_idx;
   std::vector<Particle> m_particles;
 
 private:
   void resample_particles();
-  void map_weight_to_rgb(float weight, double *r, double *g, double *b);
-  void visualize_key(const octomap::KeySet freeSet, const octomap::KeySet occSet, const pc_map_pair& pair, uint64_t stamp);
+  void map_weight_to_rgb(float weight, double* r, double* g, double* b);
+  void visualize_key(const octomap::KeySet freeSet, const octomap::KeySet occSet, const pc_map_pair& pair,
+                     uint64_t stamp);
   inline double gauss(double variance);
 
   bool m_debug;
