@@ -23,6 +23,9 @@ Field D* implementation details can be found in FieldDPlanner.h
 #include <vector>
 #include "igvc_navigation/Graph.h"
 #include "FieldDPlanner.h"
+#include <signal.h>
+
+#include <gperftools/profiler.h>
 
 std::mutex planning_mutex;
 
@@ -138,6 +141,14 @@ void waypoint_callback(const geometry_msgs::PointStampedConstPtr& msg)
     initial_goal_set = true;
 }
 
+void node_cleanup(int sig) {
+    ProfilerStop();
+  map.reset();
+  planning_mutex.unlock();
+  ROS_ERROR("PLEASE WORK");
+  ros::shutdown();
+}
+
 //----------------------------- main ----------------------------------//
 
 int main(int argc, char** argv)
@@ -146,6 +157,8 @@ int main(int argc, char** argv)
 
   ros::NodeHandle nh;
   ros::NodeHandle pNh("~");
+
+  signal(SIGINT, node_cleanup);
 
   // subscribe to map for occupancy grid and waypoint for goal node
   ros::Subscriber map_sub = nh.subscribe("/map", 1, map_callback);
@@ -174,6 +187,7 @@ int main(int argc, char** argv)
 
   ros::Rate rate(rateTime);
 
+  ProfilerStart("ds");
   while (ros::ok())
   {
       ros::spinOnce(); // handle subscriber callbacks

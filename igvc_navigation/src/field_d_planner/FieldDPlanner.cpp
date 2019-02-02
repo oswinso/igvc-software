@@ -263,6 +263,7 @@ void FieldDPlanner::constructOptimalPath()
     float min_cost;
     path_additions pa;
 
+    int index = 0;
     do
     {
         // move one step and calculate the optimal path additions (min 1, max 2)
@@ -271,6 +272,7 @@ void FieldDPlanner::constructOptimalPath()
         path.insert(path.end(), pa.first.begin(), pa.first.end());
         min_cost = pa.second;
         curr_pos = path.back();
+        if (index++ > 1000) break;
     } while (!isWithinRangeOfGoal(curr_pos) && (min_cost != std::numeric_limits<float>::infinity()));
 
     if (min_cost == std::numeric_limits<float>::infinity())
