@@ -49,6 +49,7 @@ Date Created: December 20th, 2018
 #include <utility>
 #include <algorithm>
 #include <functional>
+#include <boost/container/flat_set.hpp>
 
 #include "Node.h"
 
@@ -192,7 +193,7 @@ private:
     @param[in] ind index of state to find in the priority queue
     @return iterator to the found element or iterator to end of priority queue if no such element found
     */
-    std::set<std::pair<Node,Key>>::iterator find(Node n);
+    boost::container::flat_set<std::pair<Node,Key>>::iterator find(Node n);
 
     // Declaring the type of Predicate that accepts 2 pairs and returns a bool
     typedef std::function<bool(std::pair<Node,Key>, std::pair<Node,Key>)> Comparator;
@@ -204,7 +205,7 @@ private:
                 return elem1.second <= elem2.second;
             };
 
-    std::set<std::pair<Node,Key>, Comparator> pq;
+    boost::container::flat_set<std::pair<Node,Key>, Comparator> pq;
 };
 
 std::ostream& operator<<(std::ostream& stream, const PriorityQueue& pq);

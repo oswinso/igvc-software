@@ -70,9 +70,9 @@ std::string PriorityQueue::str() const
     return ss.str();
 }
 
-std::set<std::pair<Node,Key>>::iterator PriorityQueue::find(Node n)
+boost::container::flat_set<std::pair<Node,Key>>::iterator PriorityQueue::find(Node n)
 {
-    std::set<std::pair<Node,Key>>::iterator it = std::find_if(pq.begin(), pq.end(), \
+    boost::container::flat_set<std::pair<Node,Key>>::iterator it = std::find_if(pq.begin(), pq.end(), \
             [n](std::pair<Node,Key> const& e)
             {
                 return e.first.getIndex() == n.getIndex();

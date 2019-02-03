@@ -222,6 +222,7 @@ int FieldDPlanner::computeShortestPath()
     //     return 0;
 
     int numNodesExpanded = 0;
+    constexpr int max_expanded = 10000;
     while((PQ.topKey() < calculateKey(graph.Start)) || (std::fabs(getRHS(graph.Start) - getG(graph.Start)) > 1e-5))
     {
         Node topNode = PQ.topNode();
@@ -244,6 +245,9 @@ int FieldDPlanner::computeShortestPath()
             // propagate changes to neighbors and to topNode
             for (Node nbr : graph.nbrs(topNode)) updateNode(nbr);
             updateNode(topNode);
+        }
+        if (numNodesExpanded > max_expanded) {
+          break;
         }
     }
     return numNodesExpanded;
