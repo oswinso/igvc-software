@@ -179,3 +179,5 @@ add_subdirectory(src/path_planner)
 add_subdirectory(src/state_estimator)
 add_subdirectory(src/waypoint_source)
 add_subdirectory(src/wheel_odometer)
+add_subdirectory(src/ekf)
+
