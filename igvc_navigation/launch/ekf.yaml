@@ -2,3 +2,21 @@ topics:
   imu: "/imu"
   gps: "/odometry/gps"
   odometry: "/wheel_odometry"
+ekf:
+  #   x   y   z   r   p   y
+  #   x'  y'  z'  r'  p'  y'
+  #   x'' y'' z''
+  initial_pose: [0, 0, 0, 0, 0, 0,
+                 0, 0, 0, 0, 0, 0,
+                 0, 0, 0]
+imu:
+  # Linear acceleration: x'', y'', z''
+  # Magnetometer: r, p, y
+  # Gyroscope: roll'', pitch'' ,yaw'',
+  diagonals: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+gps:
+  # Position: x, y, z
+  diagonals: [0.01, 0.01, 0.01]
+odometry:
+  # Velocity: x', y', z'
+  diagonals: [0.01, 0.01, 0.01]
