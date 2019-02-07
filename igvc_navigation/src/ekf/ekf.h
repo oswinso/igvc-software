@@ -20,6 +20,7 @@ private:
   int m_state_dims;
 
   double m_gamma;
+  double m_axle_length;
 
   ros::NodeHandle nh;
   ros::NodeHandle pNh;
@@ -31,6 +32,7 @@ private:
   Vector6d m_weights_c;
   Matrix6d m_covariance;
   Matrix6d m_noise_predict;
+  Matrix6d m_noise_measure;
   Matrix6d m_mu_predicted;
   Matrix6d m_covar_predicted;
 
@@ -58,6 +60,11 @@ private:
   void motion_model(const ros::Duration &update_duration, const Eigen::Matrix<double, 6, 13> &sigma,
                          Eigen::Matrix<double, 6, 13>& sigma_star);
   void recalculate_sigma_points(Eigen::Matrix<double, 6, 13>& sigma_points);
+
+  void compute_gps_diff(const sensor_msgs::NavSatFixConstPtr& gps);
+  double gps_x;
+  double gps_y;
+  double gps_theta;
 
 #define STAMP(x) (x->header.stamp)
 

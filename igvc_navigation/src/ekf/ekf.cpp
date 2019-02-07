@@ -3,7 +3,14 @@
 #include <igvc_utils/NodeUtils.hpp>
 #include <thread>
 
-Ekf::Ekf() : m_state_dims{6}, nh{}, pNh{"~"}, state{}
+#define x(mat) (mat.row(0))
+#define y(mat) (mat.row(1))
+#define v(mat) (mat.row(2))
+#define a(mat) (mat.row(3))
+#define theta(mat) (mat.row(4))
+#define theta_dot(mat) (mat.row(5))
+
+Ekf::Ekf() : m_state_dims{6}, nh{}, pNh{"~"}, m_state{}
 {
   std::string topic_imu, topic_gps, topic_odometry;
 
@@ -12,6 +19,7 @@ Ekf::Ekf() : m_state_dims{6}, nh{}, pNh{"~"}, state{}
   igvc::getParam(pNh, "topics/odometry", topic_odometry);
   igvc::getParam(pNh, "ekf/initial_pose", m_initial_pose);
   igvc::getParam(pNh, "other/buffer_size", m_buffer_size);
+  igvc::getParam(pNh, "motion_model/axle_length", m_axle_length);
 
   ros::Subscriber imu_sub = nh.subscribe(topic_imu, 1, &Ekf::imu_callback, this);
   ros::Subscriber gps_sub = nh.subscribe(topic_gps, 1, &Ekf::gps_callback, this);
@@ -74,53 +82,181 @@ void Ekf::main_loop()
 
 void Ekf::odom_update()
 {
-  // Predict till the message
+  // TODO: populate sensor
+  Eigen::Matrix<double, 3, 1> sensor;
+
+  // 1. Predict till the message
   prediction_step(STAMP(m_odom_buffer.front()));
   Eigen::Matrix<double, 6, 13> sigma_points;
+
+  // 2. Recalculate sigma points. χ = (μ    μ+γ*sqrt(Σ)     μ-γ*sqrt(Σ))
   recalculate_sigma_points(sigma_points);
-  Eigen::Matrix<double, 2, 13> Z_predicted;
+  Eigen::Matrix<double, 3, 13> Z_predicted;
+
+  // 3. Transform sigma points from state space to measurement space. Z = h(χ)
   sigma_to_odom(sigma_points, Z_predicted);
+
+  // 4. Compute predicted observation. z_predicted = Zw
+  Eigen::Matrix<double, 3, 1> z_predicted = Z_predicted * m_weights_m;
+
+  // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
+  Eigen::Matrix<double, 3, 13> Z_diff;
+  for (int i = 0; i < 13; i++)
+  {
+    Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
+  }
+  Eigen::Matrix<double, 3, 3> S = Z_diff * m_weights_c * Z_diff.transpose() + m_noise_measure;
+
+
+  // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
+  Eigen::Matrix<double, 6, 13> sigma_diff;
+  for (int i = 0; i < 6; i++)
+  {
+    sigma_points.col(i) - m_mu_predicted;
+  }
+  Eigen::Matrix<double, 6, 3> cross_corelation = sigma_diff * m_weights_c * Z_diff.transpose();
+
+  // 7. Compute Kalman Gain. K = T S^-1
+  Eigen::Matrix<double, 3, 3> kalman_gain = cross_corelation * S.inverse();
+
+  // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
+  m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
+
+  // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
+  m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
 }
 
-void Ekf::sigma_to_odom(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 2, 13> Z_predicted)
+void Ekf::sigma_to_odom(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 2, 13> Z_pred)
 {
   // Convert from:
   // x, y, v, a, theta, theta'
   // To:
-  // V_x, V_y
+  // V_l, V_r
   //
-  // V_x =
-  // V_y =
+  // V_l = (2v - theta')/2
+  // V_r = (2v + theta')/2
+#define vl(mat) (mat.row(0))
+#define vr(mat) (mat.row(1))
+  vl(Z_pred) = (2 * v(sigma_points) - m_axle_length * theta_dot(sigma_points))/2;
+  vr(Z_pred) = (2 * v(sigma_points) + m_axle_length * theta_dot(sigma_points))/2;
 }
 
 void Ekf::imu_update()
 {
-  // Predict till the message
+  // TODO: populate sensor
+  Eigen::Matrix<double, 4, 1> sensor;
+
+  // 1. Predict till the message
   prediction_step(STAMP(m_imu_buffer.front()));
   Eigen::Matrix<double, 6, 13> sigma_points;
+
+  // 2. Recalculate sigma points. χ = (μ    μ+γ*sqrt(Σ)     μ-γ*sqrt(Σ))
   recalculate_sigma_points(sigma_points);
+  Eigen::Matrix<double, 4, 13> Z_predicted;
+
+  // 3. Transform sigma points from state space to measurement space. Z = h(χ)
+  sigma_to_imu(sigma_points, Z_predicted);
+
+  // 4. Compute predicted observation. z_predicted = Zw
+  Eigen::Matrix<double, 4, 1> z_predicted = Z_predicted * m_weights_m;
+
+  // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
+  Eigen::Matrix<double, 4, 13> Z_diff;
+  for (int i = 0; i < 13; i++)
+  {
+    Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
+  }
+  Eigen::Matrix<double, 4, 4> S = Z_diff * m_weights_c * Z_diff.transpose() + m_noise_measure;
+
+
+  // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
+  Eigen::Matrix<double, 6, 13> sigma_diff;
+  for (int i = 0; i < 6; i++)
+  {
+    sigma_points.col(i) - m_mu_predicted;
+  }
+  Eigen::Matrix<double, 6, 4> cross_corelation = sigma_diff * m_weights_c * Z_diff.transpose();
+
+  // 7. Compute Kalman Gain. K = T S^-1
+  Eigen::Matrix<double, 4, 4> kalman_gain = cross_corelation * S.inverse();
+
+  // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
+  m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
+
+  // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
+  m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
 }
 
-void Ekf::sigma_to_imu(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 4, 13> Z_predicted)
+void Ekf::sigma_to_imu(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 4, 13> Z_pred)
 {
   // Convert from:
   // x, y, v, a, theta, theta'
   // To:
   // x'', y'', theta, theta'
   //
-  // x'' =
-  // y'' =
+  // x'' = a * cos(theta)
+  // y'' = a * sin(theta)
+  // theta = theta
+  // theta' = theta'
+#define acc_x(mat) (mat.row(0))
+#define acc_y(mat) (mat.row(1))
+#define theta_z(mat) (mat.row(2))
+#define theta_dot_z(mat) (mat.row(3))
+
+  acc_x(Z_pred) = (a(sigma_points).array() * theta(sigma_points).array().cos()).matrix();
+  acc_y(Z_pred) = (a(sigma_points).array() * theta(sigma_points).array().sin()).matrix();
+  theta_z(Z_pred) = theta(sigma_points);
+  theta_dot_z(Z_pred) = theta_dot(sigma_points);
 }
 
 void Ekf::gps_update()
 {
-  // Predict till the message
-  prediction_step(STAMP(m_gps_buffer.front()));
+  // TODO: populate sensor
+  sensor_msgs::NavSatFixConstPtr gps_data = m_gps_buffer.front();
+  compute_gps_diff(gps_data);
+  Eigen::Matrix<double, 3, 1> sensor;
+  // 1. Predict till the message
+  prediction_step(STAMP(gps_data));
   Eigen::Matrix<double, 6, 13> sigma_points;
+
+  // 2. Recalculate sigma points. χ = (μ    μ+γ*sqrt(Σ)     μ-γ*sqrt(Σ))
   recalculate_sigma_points(sigma_points);
+
+  // 3. Transform sigma points from state space to measurement space. Z = h(χ)
+  Eigen::Matrix<double, 3, 13> Z_predicted;
+  sigma_to_imu(sigma_points, Z_predicted);
+
+  // 4. Compute predicted observation. z_predicted = Zw
+  Eigen::Matrix<double, 3, 1> z_predicted = Z_predicted * m_weights_m;
+
+  // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
+  Eigen::Matrix<double, 3, 13> Z_diff;
+  for (int i = 0; i < 13; i++)
+  {
+    Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
+  }
+  Eigen::Matrix<double, 3, 3> S = Z_diff * m_weights_c * Z_diff.transpose() + m_noise_measure;
+
+
+  // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
+  Eigen::Matrix<double, 6, 13> sigma_diff;
+  for (int i = 0; i < 6; i++)
+  {
+    sigma_points.col(i) - m_mu_predicted;
+  }
+  Eigen::Matrix<double, 6, 3> cross_corelation = sigma_diff * m_weights_c * Z_diff.transpose();
+
+  // 7. Compute Kalman Gain. K = T S^-1
+  Eigen::Matrix<double, 3, 3> kalman_gain = cross_corelation * S.inverse();
+
+  // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
+  m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
+
+  // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
+  m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
 }
 
-void Ekf::sigma_to_gps(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 3, 13> Z_predicted)
+void Ekf::sigma_to_gps(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<double, 3, 13> Z_pred)
 {
   // Convert from:
   // x, y, v, a, theta, theta'
@@ -130,6 +266,18 @@ void Ekf::sigma_to_gps(Eigen::Matrix<double, 6, 13> sigma_points, Eigen::Matrix<
   // x =
   // y =
   // theta =
+  x(Z_pred) = x(sigma_points);
+  y(Z_pred) = y(sigma_points);
+  theta_z(Z_pred) = theta(sigma_points);
+}
+
+/**
+ * Converts longitude and latitude into /odom x, y coordinates, calculates theta' from difference
+ * @param gps
+ */
+void compute_gps_diff(const sensor_msgs::NavSatFixConstPtr& gps)
+{
+
 }
 
 inline void Ekf::recalculate_sigma_points(Eigen::Matrix<double, 6, 13>& sigma)
@@ -185,12 +333,6 @@ void Ekf::prediction_step(ros::Time target_time)
 void Ekf::motion_model(const ros::Duration &dt, const Eigen::Matrix<double, 6, 13> &sigma,
                        Eigen::Matrix<double, 6, 13> &sigma_star)
 {
-#define x(mat) (mat.row(0))
-#define y(mat) (mat.row(1))
-#define v(mat) (mat.row(2))
-#define a(mat) (mat.row(3))
-#define theta(mat) (mat.row(4))
-#define theta_dot(mat) (mat.row(5))
   // Calculate in rows?
   // x, y, v, a, theta, theta'
   //
@@ -222,7 +364,7 @@ Ekf::Sensor Ekf::next_sensor()
   if (STAMP(m_odom_buffer.front()) < STAMP(m_imu_buffer.front())
       && STAMP(m_odom_buffer.front()) < STAMP(m_gps_buffer.front())) {
     return Sensor::odom;
-  } else if (STAMP(m_imu_buffer.front()) < STAMP(m_odom_buffer)
+  } else if (STAMP(m_imu_buffer.front()) < STAMP(m_odom_buffer.front())
              && STAMP(m_imu_buffer.front()) < STAMP(m_gps_buffer.front())) {
     return Sensor::imu;
   } else {
