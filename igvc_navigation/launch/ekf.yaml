@@ -3,12 +3,8 @@ topics:
   gps: "/odometry/gps"
   odometry: "/wheel_odometry"
 ekf:
-  #   x   y   z   r   p   y
-  #   x'  y'  z'  r'  p'  y'
-  #   x'' y'' z''
-  initial_pose: [0, 0, 0, 0, 0, 0,
-                 0, 0, 0, 0, 0, 0,
-                 0, 0, 0]
+  #   x   y   v    a    theta    theta'
+  initial_pose: [0, 0, 0, 0, 0, 0]
 imu:
   # Linear acceleration: x'', y'', z''
   # Magnetometer: r, p, y

@@ -19,7 +19,11 @@ private:
   int m_buffer_size;
   int m_state_dims;
 
+  double m_kappa;
+  double m_alpha;
+  double m_beta;
   double m_gamma;
+  double m_lambda;
   double m_axle_length;
 
   ros::NodeHandle nh;
@@ -27,14 +31,17 @@ private:
 
   std::vector<double> m_initial_pose;
 
+  Vector6d m_mu_predicted;
   Vector6d m_state;
-  Vector6d m_weights_m;
-  Vector6d m_weights_c;
+  Eigen::Matrix<double, 13, 1>  m_weights_m;
+  Eigen::Matrix<double, 13, 1> m_weights_c;
   Matrix6d m_covariance;
   Matrix6d m_noise_predict;
-  Matrix6d m_noise_measure;
-  Matrix6d m_mu_predicted;
   Matrix6d m_covar_predicted;
+
+  Eigen::Matrix<double, 2, 2> m_odom_noise;
+  Eigen::Matrix<double, 4, 4> m_imu_noise;
+  Eigen::Matrix<double, 3, 3> m_gps_noise;
 
   enum Sensor { none, imu, gps, odom };
 
