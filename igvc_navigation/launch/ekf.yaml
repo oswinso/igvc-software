@@ -1,20 +1,40 @@
 topics:
-  imu: "/imu"
-  gps: "/odometry/gps"
-  odometry: "/wheel_odometry"
-ekf:
+  imu: "/imu/fuck"
+  gps: "/gps/fuck"
+  odometry: "/encoders"
+ukf:
   #   x   y   v    a    theta    theta'
   initial_pose: [0, 0, 0, 0, 0, 0]
+  alpha: 0.001
+  beta: 2
+  kappa: 0
+  initial_covariance_diagonal: [0.01, 0.000001, 0.01, 0.01, 0.01, 0.01]
 imu:
-  # Linear acceleration: x'', y'', z''
-  # Magnetometer: r, p, y
-  # Gyroscope: roll'', pitch'' ,yaw'',
-  diagonals: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+  # Linear acceleration: x'', y''
+  # Magnetometer: y
+  # Gyroscope: yaw'',
+  diagonals: [0.01, 0.01, 0.01, 0.01]
+  # x'' y'' yaw yaw'
+  covariance: [0.01, 0,    0,     0,
+               0,    0.01, 0,     0,
+               0,    0,    0.01,  0,
+               0,    0,    0,     0.01]
 gps:
   # Position: x, y, z
   diagonals: [0.01, 0.01, 0.01]
-odometry:
+  covariance: [0.01, 0,    0,
+               0,    0.01, 0,
+               0,    0,    0.01,
+               ]
+odom:
   # Velocity: x', y', z'
   diagonals: [0.01, 0.01, 0.01]
+  covariance: [0.01, 0,
+               0,    0.01]
 motion_model:
   axle_length: 0.52
+tf_frames:
+  odom: "/odom"
+  base: "/ukf"
+other:
+  buffer_size: 32

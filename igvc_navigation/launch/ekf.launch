@@ -1,5 +1,4 @@
 <launch>
-    <!-- Ekf Node -->
     <node name="ekf" pkg="igvc_navigation" type="ekf" output="screen" >
         <rosparam command="load" file="$(find igvc_navigation)/launch/ekf.yaml"/>
     </node>
