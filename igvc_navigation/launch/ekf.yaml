@@ -9,6 +9,9 @@ ukf:
   beta: 2
   kappa: 0
   initial_covariance_diagonal: [0.01, 0.000001, 0.01, 0.01, 0.01, 0.01]
+  process_noise:
+    phi_acceleration: 0.0001
+    phi_angular_velocity: 0.0001
 imu:
   # Linear acceleration: x'', y''
   # Magnetometer: y

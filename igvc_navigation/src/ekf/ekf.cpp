@@ -32,6 +32,8 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
   igvc::getParam(pNh, "ukf/kappa", m_kappa);
   igvc::getParam(pNh, "ukf/alpha", m_alpha);
   igvc::getParam(pNh, "ukf/beta", m_beta);
+  igvc::getParam(pNh, "ukf/process_noise/phi_acceleration", m_phi1);
+  igvc::getParam(pNh, "ukf/process_noise/phi_angular_velocity", m_phi2);
   igvc::getParam(pNh, "other/buffer_size", m_buffer_size);
   igvc::getParam(pNh, "motion_model/axle_length", m_axle_length);
   igvc::getParam(pNh, "imu/covariance", imu_covar);
@@ -57,11 +59,16 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
   m_weights_c(0) = m_weights_m(0) + (1 - m_alpha * m_alpha + m_beta);
   for (int i = 1; i < 13; i++)
   {
-    m_weights_m(i) = 1 / (2 * (m_state_dims + m_lambda));
+    m_weights_m(i) = 1.0 / (2.0 * (m_state_dims + m_lambda));
     m_weights_c(i) = m_weights_m(i);
   }
   ROS_INFO_STREAM("UKF Parameters:\n alpha: " << m_alpha << ", beta: " << m_beta << ", kappa: " << m_kappa << ", lambda: " << m_lambda
                                           << "\nWeights_m: \n" << m_weights_m << "\nWeights_c: \n" << m_weights_c);
+  double sum_weights = 0;
+  for (int i = 0; i < 13; i++) {
+    sum_weights += m_weights_m(i);
+  }
+  ROS_INFO_STREAM("Sum of m_weights_m: " << sum_weights);
 
   // Check for right dimensions
   if (odom_covar.size() != 4 || gps_covar.size() != 9 || imu_covar.size() != 16)
@@ -103,7 +110,6 @@ void Ekf::imu_callback(const sensor_msgs::ImuConstPtr &imu)
 
 void Ekf::gps_callback(const sensor_msgs::NavSatFixConstPtr &gps)
 {
-  return;
   std::lock_guard<std::mutex> gps_guard(m_gps_buffer_mutex);
   m_gps_buffer.push_back(gps);
 }
@@ -159,7 +165,7 @@ void Ekf::odom_update()
     m_odom_buffer.pop_front();
     return;
   }
-  ROS_INFO_STREAM("\n\n===============ODOM=================");
+  ROS_INFO_STREAM(std::setw(20) << "\n\n\n========================== ODOM =================================");
   // Populate sensor matrix
   Eigen::Matrix<double, 2, 1> sensor;
   sensor(0) = m_odom_buffer.front()->left_velocity;
@@ -216,13 +222,13 @@ void Ekf::odom_update()
 
 //  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
 //  ROS_INFO_STREAM("Kalman gain: \n" << std::setprecision(2) << kalman_gain);
-//  ROS_INFO_STREAM("sensor: \n" << std::setprecision(2) << sensor);
-//  ROS_INFO_STREAM("z_predicted: \n" << std::setprecision(2) << z_predicted);
-//  ROS_INFO_STREAM("sensor - z_predicted: \n" << std::setprecision(2) << (sensor - z_predicted));
+  ROS_INFO_STREAM("\n========== Sensor ==========\n" << std::setprecision(2) << sensor);
+  ROS_INFO_STREAM("========== z_predicted ==========\n" << std::setprecision(2) << z_predicted);
+  ROS_INFO_STREAM("========== Sensor - z_predicted ===========\n" << std::setprecision(2) << (sensor - z_predicted));
   // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
   m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
 
-  ROS_INFO_STREAM("Final state: \n" << std::setprecision(2) << m_state);
+  ROS_INFO_STREAM("\n\n==========Final state===========\n" << std::setprecision(2) << m_state);
 
   // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
   m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
@@ -438,12 +444,10 @@ void Ekf::prediction_step(const ros::Time &target_time)
   ros::Duration dt = target_time - m_last_update_time;
 
   // Calculate offset = gamma * sqrt(covariance) through Cholesky decomposition
-  ROS_INFO_STREAM("Covariance matrix: \n" << std::setprecision(2) << m_covariance);
   Matrix6d offset = m_covariance.llt().matrixL();
-  ROS_INFO_STREAM("Factored matrix: \n" << std::setprecision(2) << offset);
   offset = m_gamma * offset;
 
-  ROS_INFO_STREAM("Offset matrix: \n" << std::setprecision(2) << offset);
+//  ROS_INFO_STREAM("Offset matrix: \n" << std::setprecision(2) << offset);
 
   // Calculate Sigma points
   Eigen::Matrix<double, 6, 13> sigma;
@@ -456,16 +460,25 @@ void Ekf::prediction_step(const ros::Time &target_time)
   // Col n+1 -> 2n + 1 is average - gamma * covariance
   sigma.block<6, 6>(0, 7) = stacked_state - offset;
 
-//  ROS_INFO_STREAM("Prediction Step Sigma points: \n" << std::setprecision(2) << sigma);
+  ROS_INFO_STREAM("========== Prediction Step Sigma points ==========\n" << std::setprecision(2) << sigma);
 
   // Predict until target_time using motion model
   Eigen::Matrix<double, 6, 13> sigma_star;
   motion_model(dt, sigma, sigma_star);
+  ROS_INFO_STREAM("=========== Motion Model =========\n" << std::setprecision(2) << sigma_star);
+  ROS_INFO_STREAM("=========== Weights =========\n" << std::setprecision(2) << m_weights_m.transpose());
+
+  double sum = 0;
+  for (int i = 0; i < 13; ++i) {
+    sum += sigma_star(0, i) * m_weights_m(i);
+    ROS_INFO_STREAM(i << ": " << sigma_star(0, i) * m_weights_m(i));
+  }
+  ROS_INFO_STREAM("SUM OF X WEIGHTED: " << sum);
 
   // Calculate predicted mean
   m_mu_predicted = sigma_star * m_weights_m;
   //  ROS_INFO_STREAM("m_weights_m: \n" << std::setprecision(2) << m_weights_m);
-  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
+  ROS_INFO_STREAM("\n========== m_mu_predicted ==========\n" << std::setprecision(2) << m_mu_predicted);
 
   // Calculate predicted covariance
   m_covar_predicted.setZero();
@@ -473,8 +486,51 @@ void Ekf::prediction_step(const ros::Time &target_time)
   {
     m_covar_predicted += m_weights_c(i) * (sigma_star.col(i) - m_mu_predicted) * (sigma_star.col(i) - m_mu_predicted).transpose();
   }
+  // Calculate process noise and not just yeet it
+  calculate_process_noise(dt.toSec());
+
   m_covar_predicted = m_covar_predicted + m_noise_predict;
-  ROS_INFO_STREAM("m_covariance_predicted: \n" << std::setprecision(2) << m_covar_predicted);
+  ROS_INFO_STREAM("========== m_covariance_predicted: ==========\n" << std::setprecision(2) << m_covar_predicted);
+}
+
+void Ekf::calculate_process_noise(double dt)
+{
+  m_noise_predict(0, 0) = m_phi1 * pow(dt,5)/20;
+  m_noise_predict(0, 1) = 0;
+  m_noise_predict(0, 2) = m_phi1 * pow(dt,4)/8;
+  m_noise_predict(0, 3) = m_phi1 * pow(dt,3)/6;
+  m_noise_predict(0, 4) = 0; // how to do this lol
+  m_noise_predict(0, 5) = 0; // no pls
+  m_noise_predict(1, 0) = 0;
+  m_noise_predict(1, 1) = m_phi1 * pow(dt, 5)/20;
+  m_noise_predict(1, 2) = m_phi1 * pow(dt,4)/8;
+  m_noise_predict(1, 3) = m_phi1 * pow(dt,3)/6;
+  m_noise_predict(1, 4) = 0; // how to do this lol
+  m_noise_predict(1, 5) = 0; // no pls
+  m_noise_predict(2, 0) = m_phi1 * pow(dt,4)/8;
+  m_noise_predict(2, 1) = m_phi1 * pow(dt,4)/8;
+  m_noise_predict(2, 2) = m_phi1 * pow(dt,3)/3;
+  m_noise_predict(2, 3) = m_phi1 * pow(dt,2)/2;
+  m_noise_predict(2, 4) = 0; // how to do this lol
+  m_noise_predict(2, 5) = 0; // no pls
+  m_noise_predict(3, 0) = m_phi1 * pow(dt,3)/6;
+  m_noise_predict(3, 1) = m_phi1 * pow(dt,3)/6;
+  m_noise_predict(3, 2) = m_phi1 * pow(dt,2)/2;
+  m_noise_predict(3, 3) = m_phi1 * dt;
+  m_noise_predict(3, 4) = 0; // how to do this lol
+  m_noise_predict(3, 5) = 0;
+  m_noise_predict(4, 0) = 0;
+  m_noise_predict(4, 1) = 0;
+  m_noise_predict(4, 2) = 0;
+  m_noise_predict(4, 3) = 0;
+  m_noise_predict(4, 4) = m_phi2 * pow(dt, 3)/3;
+  m_noise_predict(4, 5) = m_phi2 * pow(dt, 2)/2;
+  m_noise_predict(5, 0) = 0;
+  m_noise_predict(5, 1) = 0;
+  m_noise_predict(5, 2) = 0;
+  m_noise_predict(5, 3) = 0;
+  m_noise_predict(5, 4) = m_phi2 * pow(dt, 2)/2;
+  m_noise_predict(5, 5) = m_phi2 * dt;
 }
 
 void Ekf::motion_model(const ros::Duration &dt, const Eigen::Matrix<double, 6, 13> &sigma,
@@ -483,9 +539,9 @@ void Ekf::motion_model(const ros::Duration &dt, const Eigen::Matrix<double, 6, 1
   // Calculate in rows?
   // x, y, v, a, theta, theta'
   //
-  // x = x + (v + 0.5 * a * dt^2) * cos(theta + dt * theta / 2) * dt
-  // y = y + v * sin ( theta + dt * theta' / 2) * dt + 0.5 * a * dt^2 * sin(theta + dt * theta / 2)
-  // v = v + dt * a (But we use v = v + dt * a /2 for x, y calculation)
+  // x = x + (v + a/4 * dt) * cos(theta + dt * theta' / 2) * dt
+  // y = y + (v + a/4 * dt) * sin (theta + dt * theta' / 2) * dt
+  // v = v + dt * a (But we use v = v + dt * a/2 for x, y calculation)
   // a = a
   // theta = theta + dt * theta' (But we use theta = theta + dt * theta / 2)
   // theta' = theta'
@@ -498,12 +554,11 @@ void Ekf::motion_model(const ros::Duration &dt, const Eigen::Matrix<double, 6, 1
 
   a(sigma_star) = a(sigma);
   v(sigma_star) = v(sigma) + dt.toSec() * a(sigma);
-  Eigen::Matrix<double, 1, 13> dpos = (v(sigma) + 0.5 * dt.toSec() * a(sigma));
+  Eigen::Matrix<double, 1, 13> dpos = (v(sigma) + dt.toSec() * a(sigma)/4);
 
   x(sigma_star) = x(sigma) + (dpos.array() * mid_theta.array().cos() * dt.toSec()).matrix();
   y(sigma_star) = y(sigma) + (dpos.array() * mid_theta.array().sin() * dt.toSec()).matrix();
 
-  ROS_INFO_STREAM("Motion Model: \n" << std::setprecision(2) << sigma_star);
 }
 
 Ekf::Sensor Ekf::next_sensor()

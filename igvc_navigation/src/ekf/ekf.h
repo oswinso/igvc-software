@@ -26,6 +26,7 @@ private:
   double m_beta;
   double m_gamma;
   double m_lambda;
+  double m_phi1, m_phi2;
   double m_axle_length;
 
   std::string m_odom_frame;
@@ -81,6 +82,7 @@ private:
 
   void compute_gps_diff(const sensor_msgs::NavSatFixConstPtr& gps);
   void publish_pose() const;
+  void calculate_process_noise(double dt);
   double gps_x;
   double gps_y;
   double gps_theta;
