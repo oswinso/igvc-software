@@ -5,13 +5,13 @@ topics:
 ukf:
   #   x   y   v    a    theta    theta'
   initial_pose: [0, 0, 0, 0, 0, 0]
-  alpha: 0.001
+  alpha: 0.1
   beta: 2
-  kappa: 0
-  initial_covariance_diagonal: [0.01, 0.000001, 0.01, 0.01, 0.01, 0.01]
+  kappa: -3
+  initial_covariance_diagonal: [0.00000001, 0.00000001, 0.000000001, 0.000000001, 0.00001, 0.000001]
   process_noise:
     phi_acceleration: 0.0001
-    phi_angular_velocity: 0.0001
+    phi_angular_velocity: 0.00000000001
 imu:
   # Linear acceleration: x'', y''
   # Magnetometer: y
