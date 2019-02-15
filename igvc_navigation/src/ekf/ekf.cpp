@@ -52,17 +52,19 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
   m_pose_pub = nh.advertise<nav_msgs::Odometry>("/odom/ukf", 1);
 
   // Calculate parameters and weights
+  constexpr double alpha_squared = 1.0/192.0;
   m_state_dims = 6;
-  m_gamma = sqrt(m_alpha * m_alpha * (m_state_dims + m_kappa));
-  m_lambda = m_alpha * m_alpha * (m_state_dims + m_kappa) - m_state_dims;
+  m_lambda = alpha_squared * (m_state_dims + m_kappa) - m_state_dims;
   m_weights_m(0) = m_lambda / (m_state_dims + m_lambda);
-  m_weights_c(0) = m_weights_m(0) + (1 - m_alpha * m_alpha + m_beta);
+  m_weights_m(0) = -384;
+  m_weights_c(0) = m_weights_m(0) + (1 - alpha_squared + m_beta);
   for (int i = 1; i < 13; i++)
   {
-    m_weights_m(i) = 1.0 / (2.0 * (m_state_dims + m_lambda));
+//    m_weights_m(i) = 1.0 / (2.0 * (m_state_dims + m_lambda));
+    m_weights_m(i) = 32;
     m_weights_c(i) = m_weights_m(i);
   }
-  ROS_INFO_STREAM("UKF Parameters:\n alpha: " << m_alpha << ", beta: " << m_beta << ", kappa: " << m_kappa
+  ROS_INFO_STREAM("UKF Parameters:\n alpha: " << alpha_squared << ", beta: " << m_beta << ", kappa: " << m_kappa
                                               << ", lambda: " << m_lambda << "\nWeights_m: \n"
                                               << m_weights_m << "\nWeights_c: \n"
                                               << m_weights_c);
@@ -100,6 +102,8 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
       m_imu_noise(i, j) = imu_covar[4 * i + j];
     }
   }
+
+  m_odom_pub = nh.advertise<nav_msgs::Odometry>("/ukf/odometry", 1);
 
   std::thread main_thread(&Ekf::main_loop, this);
   ros::spin();
@@ -188,12 +192,19 @@ void Ekf::odom_update()
 
   // 4. Compute predicted observation. z_predicted = Zw
   Eigen::Matrix<double, 2, 1> z_predicted = Eigen::Matrix<double, 2, 1>::Zero();
-  for (int i = 1; i < 7; i++)
+
+  // Kahan's summation algorithm to not get fucked by floating point addition errors
+  Eigen::Matrix<double, 2, 1> c = Eigen::Matrix<double, 2, 1>::Zero();
+  Eigen::Matrix<double, 2, 1> y = Eigen::Matrix<double, 2, 1>::Zero();
+  Eigen::Matrix<double, 2, 1> t = Eigen::Matrix<double, 2, 1>::Zero();
+  for (int i = 0; i < 13; i++)
   {
-    z_predicted += Z_predicted.col(i) * m_weights_m(i) + Z_predicted.col(i + 6) * m_weights_m(i + 6);
+    y = Z_predicted.col(i) * m_weights_m(i) - c;
+    t = z_predicted + y;
+    c = (t - z_predicted) - y;
+    z_predicted = t;
   }
-  z_predicted += Z_predicted.col(0) * m_weights_m(0);
-  //  ROS_INFO_STREAM("Predicted z from combining weights of Z_predicted: \n" << std::setprecision(2) << z_predicted);
+  ROS_INFO_STREAM("Predicted z from combining weights of Z_predicted: \n" << std::setprecision(2) << z_predicted);
 
   // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
   Eigen::Matrix<double, 2, 13> Z_diff;
@@ -202,7 +213,7 @@ void Ekf::odom_update()
     Eigen::Matrix<double, 3, 3> m_imu_nose;
     Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
   }
-  ROS_INFO_STREAM("Difference of each column of Z and z_predicted: \n" << std::setprecision(2) << Z_diff);
+//  ROS_INFO_STREAM("Difference of each column of Z and z_predicted: \n" << std::setprecision(2) << Z_diff);
   Eigen::Matrix<double, 13, 13> weight_c_matrix = m_weights_c.asDiagonal();
   //  ROS_INFO_STREAM("Weight matrix m_weights_c: \n" << std::setprecision(2) << weight_c_matrix);
   //  ROS_INFO_STREAM("Odometry noise: \n" << std::setprecision(2) << m_odom_noise);
@@ -218,8 +229,8 @@ void Ekf::odom_update()
   }
   //  ROS_INFO_STREAM("Sigma points after recalculation: \n" << std::setprecision(2) << sigma_points);
   //  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
-  ROS_INFO_STREAM("Difference between each sigma point and m_mu_predicted: \n" << std::setprecision(2) <<
-  sigma_diff);
+//  ROS_INFO_STREAM("Difference between each sigma point and m_mu_predicted: \n" << std::setprecision(2) <<
+//  sigma_diff);
 //  Eigen::Matrix<double, 6, 2> cross_correlation = sigma_diff * weight_c_matrix * Z_diff.transpose();
   Eigen::Matrix<double, 6, 2> cross_correlation = Eigen::Matrix<double, 6, 2>::Zero();
   for (int i = 1; i < 6; ++i)
@@ -229,24 +240,24 @@ void Ekf::odom_update()
   }
   cross_correlation += m_weights_c(0) * sigma_diff.col(0) * Z_diff.col(0).transpose();
 
-  ROS_INFO_STREAM("Cross Correlation: \n" << std::setprecision(2) << cross_correlation);
-  ROS_INFO_STREAM("S: \n" << std::setprecision(2) << S);
-  ROS_INFO_STREAM("S inverse: \n" << std::setprecision(2) << S.inverse());
+//  ROS_INFO_STREAM("Cross Correlation: \n" << std::setprecision(2) << cross_correlation);
+//  ROS_INFO_STREAM("S: \n" << std::setprecision(2) << S);
+//  ROS_INFO_STREAM("S inverse: \n" << std::setprecision(2) << S.inverse());
 
   // 7. Compute Kalman Gain. K = T S^-1
   Eigen::Matrix<double, 6, 2> kalman_gain = cross_correlation * S.inverse();
 
   //  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
-  ROS_INFO_STREAM("====== Kalman gain: ==========\n" << std::setprecision(2) << kalman_gain);
+//  ROS_INFO_STREAM("====== Kalman gain: ==========\n" << std::setprecision(2) << kalman_gain);
   ROS_INFO_STREAM("\n========== Sensor ==========\n" << std::setprecision(2) << sensor);
-  ROS_INFO_STREAM("========== z_predicted ==========\n" << std::setprecision(2) << z_predicted);
+//  ROS_INFO_STREAM("========== z_predicted ==========\n" << std::setprecision(2) << z_predicted);
   ROS_INFO_STREAM("========== Sensor - z_predicted ===========\n" << std::setprecision(2) << (sensor - z_predicted));
   ROS_INFO_STREAM("========== Kalman * diff ===========\n"
-                  << std::setprecision(2) << kalman_gain * (sensor - z_predicted));
+                  << std::setprecision(2) << (kalman_gain * (sensor - z_predicted)).transpose());
   // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
   m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
 
-  ROS_INFO_STREAM("\n\n==========Final state===========\n" << std::setprecision(2) << m_state);
+  ROS_INFO_STREAM("\n\n==========Final state===========\n" << std::setprecision(2) << m_state.transpose());
 
   // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
   m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
@@ -485,31 +496,38 @@ void Ekf::prediction_step(const ros::Time &target_time)
   ROS_INFO_STREAM("=========== Motion Model =========\n" << std::setprecision(6) << sigma_star);
   //  ROS_INFO_STREAM("=========== Weights =========\n" << std::setprecision(6) << m_weights_m.transpose());
 
-  double sum = 0;
-  for (int i = 0; i < 13; ++i)
+  // ------------------------------------------------------------ Debug ----------------------------------------
+  std::stringbuf str;
+  std::ostream stream(&str);
+  for (int i = 0; i < 13; i++)
   {
-    sum += m_weights_m(i);
+    stream << std::setprecision(10) << sigma_star(0, i) << " * " << m_weights_m(i) << " + ";
   }
-  //  ROS_INFO_STREAM("SUM OF WEIGHTS: " << sum);
+  ROS_INFO_STREAM("Equation: " << str.str());
+  // ------------------------------------------------------------ Debug ----------------------------------------
 
-  sum = 0;
-  for (int i = 0; i < 6; ++i)
-  {
-    sum += ((sigma_star(0, i + 1) * m_weights_m(i + 1)) + (sigma_star(0, i + 7) * m_weights_m(i + 7)));
-    ROS_INFO_STREAM("Sum: " << sum);
-  }
-  sum += (sigma_star(0, 0) * m_weights_m(0));
-  ROS_INFO_STREAM("SUM OF X WEIGHTED: " << sum);
-
-  ROS_INFO_STREAM("\n\n");
   // Calculate predicted mean
   m_mu_predicted.setZero();
-  for (int i = 0; i < 6; ++i)
+
+  // Kahan's summation algorithm because fuck floating point numbers
+  Eigen::Matrix<double, 6, 1> c = Eigen::Matrix<double, 6, 1>::Zero();
+  Eigen::Matrix<double, 6, 1> y = Eigen::Matrix<double, 6, 1>::Zero();
+  Eigen::Matrix<double, 6, 1> t = Eigen::Matrix<double, 6, 1>::Zero();
+  for (int i = 0; i < 13; i++)
   {
-    m_mu_predicted =
-        m_mu_predicted + ((sigma_star.col(i + 1) * m_weights_m(i + 1)) + (sigma_star.col(i + 7) * m_weights_m(i + 7)));
+    y = sigma_star.col(i) * m_weights_m(i) - c;
+    t = m_mu_predicted + y;
+    c = (t - m_mu_predicted) - y;
+    m_mu_predicted = t;
   }
-  m_mu_predicted = m_mu_predicted + (sigma_star.col(0) * m_weights_m(0));
+
+//  for (int i = 0; i < 6; ++i)
+//  {
+//    m_mu_predicted =
+//        m_mu_predicted + ((sigma_star.col(i + 1) * m_weights_m(i + 1)) + (sigma_star.col(i + 7) * m_weights_m(i + 7)));
+//  }
+//  m_mu_predicted = m_mu_predicted + (sigma_star.col(0) * m_weights_m(0));
+
   //  m_mu_predicted = sigma_star * m_weights_m;
   //  ROS_INFO_STREAM("m_weights_m: \n" << std::setprecision(2) << m_weights_m);
   ROS_INFO_STREAM("\n========== m_mu_predicted ==========\n" << std::setprecision(2) << m_mu_predicted);
@@ -524,7 +542,7 @@ void Ekf::prediction_step(const ros::Time &target_time)
   // Calculate process noise and not just yeet it
   calculate_process_noise(dt.toSec());
 
-  ROS_INFO_STREAM("========== process noise: ==========\n" << std::setprecision(2) << m_noise_predict);
+//  ROS_INFO_STREAM("========== process noise: ==========\n" << std::setprecision(2) << m_noise_predict);
   m_covar_predicted = m_covar_predicted + m_noise_predict;
   ROS_INFO_STREAM("========== m_covariance_predicted: ==========\n" << std::setprecision(2) << m_covar_predicted);
 }
@@ -635,6 +653,36 @@ void Ekf::publish_pose() const
   transform.setBasis(rot);
   transform.setOrigin(coords);
   br.sendTransform(tf::StampedTransform{ transform, ros::Time::now(), m_odom_frame, m_base_frame });
+
+  // Publish odom msg
+  nav_msgs::Odometry odom_msg{};
+  tf::Quaternion quat = transform.getRotation();
+  odom_msg.header.stamp = ros::Time::now();
+  odom_msg.pose.pose.position.x = m_state(0);
+  odom_msg.pose.pose.position.y = m_state(1);
+  odom_msg.pose.pose.position.z = 0;
+  odom_msg.pose.pose.orientation.x = quat.getX();
+  odom_msg.pose.pose.orientation.y = quat.getY();
+  odom_msg.pose.pose.orientation.z = quat.getZ();
+  odom_msg.pose.pose.orientation.w = quat.getW();
+  odom_msg.pose.covariance = {
+      m_covariance(0,0), m_covariance(0, 1), 0, 0, 0, m_covariance(0, 4),
+      m_covariance(1,0), m_covariance(1, 1), 0, 0, 0, m_covariance(1, 4),
+      0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0,
+      m_covariance(4,0), m_covariance(4, 1), 0, 0, 0, m_covariance(4, 4)
+  };
+
+  odom_msg.twist.twist.angular.x = 0;
+  odom_msg.twist.twist.angular.y = 0;
+  odom_msg.twist.twist.angular.z = m_state(5);
+  odom_msg.twist.twist.linear.x = cos(m_state(4)) * m_state(2);
+  odom_msg.twist.twist.linear.y = sin(m_state(4)) * m_state(2);
+  odom_msg.twist.twist.linear.z = 0;
+  // Fuck twist covariance
+//  odom_msg.twist.covariance = { };
+  m_odom_pub.publish(odom_msg);
 }
 
 int main(int argc, char *argv[])

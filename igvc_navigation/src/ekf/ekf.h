@@ -24,7 +24,6 @@ private:
   double m_kappa;
   double m_alpha;
   double m_beta;
-  double m_gamma;
   double m_lambda;
   double m_phi1, m_phi2;
   double m_axle_length;
@@ -63,6 +62,8 @@ private:
 
   ros::Time m_last_update_time;
 
+  ros::Publisher m_odom_pub;
+
   void imu_callback(const sensor_msgs::ImuConstPtr& imu);
   void gps_callback(const sensor_msgs::NavSatFixConstPtr& gps);
   void odometry_callback(const igvc_msgs::velocity_pairConstPtr& motor);
@@ -83,6 +84,7 @@ private:
   void compute_gps_diff(const sensor_msgs::NavSatFixConstPtr& gps);
   void publish_pose() const;
   void calculate_process_noise(double dt);
+
   double gps_x;
   double gps_y;
   double gps_theta;
