@@ -14,7 +14,7 @@
 #define theta(mat) (mat.row(4))
 #define theta_dot(mat) (mat.row(5))
 
-Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_state{}
+Ekf::Ekf() : m_initialized{false}, m_state_dims{6}, nh{}, pNh{"~"}, m_state{}
 {
   std::string topic_imu, topic_gps, topic_odometry;
   std::vector<double> covariance_diagonal;
@@ -52,15 +52,14 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
   m_pose_pub = nh.advertise<nav_msgs::Odometry>("/odom/ukf", 1);
 
   // Calculate parameters and weights
-  constexpr double alpha_squared = 1.0/192.0;
+  constexpr double alpha_squared = 1.0 / 192.0;
   m_state_dims = 6;
   m_lambda = alpha_squared * (m_state_dims + m_kappa) - m_state_dims;
   m_weights_m(0) = m_lambda / (m_state_dims + m_lambda);
   m_weights_m(0) = -384;
   m_weights_c(0) = m_weights_m(0) + (1 - alpha_squared + m_beta);
-  for (int i = 1; i < 13; i++)
-  {
-//    m_weights_m(i) = 1.0 / (2.0 * (m_state_dims + m_lambda));
+  for (int i = 1; i < 13; i++) {
+    //    m_weights_m(i) = 1.0 / (2.0 * (m_state_dims + m_lambda));
     m_weights_m(i) = 32;
     m_weights_c(i) = m_weights_m(i);
   }
@@ -69,15 +68,13 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
                                               << m_weights_m << "\nWeights_c: \n"
                                               << m_weights_c);
   double sum_weights = 0;
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     sum_weights += m_weights_m(i);
   }
   ROS_INFO_STREAM("Sum of m_weights_m: " << sum_weights);
 
   // Check for right dimensions
-  if (odom_covar.size() != 4 || gps_covar.size() != 9 || imu_covar.size() != 16)
-  {
+  if (odom_covar.size() != 4 || gps_covar.size() != 9 || imu_covar.size() != 16) {
     ROS_ERROR("Covariance matrices have the wrong dimensions...Exiting");
     ros::shutdown();
   }
@@ -87,18 +84,14 @@ Ekf::Ekf() : m_initialized{ false }, m_state_dims{ 6 }, nh{}, pNh{ "~" }, m_stat
   m_odom_noise(1, 0) = odom_covar[2];
   m_odom_noise(1, 1) = odom_covar[3];
 
-  for (int i = 0; i < 3; ++i)
-  {
-    for (int j = 0; j < 3; ++j)
-    {
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
       m_gps_noise(i, j) = gps_covar[3 * i + j];
     }
   }
 
-  for (int i = 0; i < 4; ++i)
-  {
-    for (int j = 0; j < 4; ++j)
-    {
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
       m_imu_noise(i, j) = imu_covar[4 * i + j];
     }
   }
@@ -140,12 +133,10 @@ void Ekf::main_loop()
   m_state(4) = m_initial_pose[4];
   m_state(5) = m_initial_pose[5];
 
-  while (ros::ok())
-  {
+  while (ros::ok()) {
     // Get message from buffer with earliest timestamp
     Sensor sensor = next_sensor();
-    switch (sensor)
-    {
+    switch (sensor) {
       case Sensor::odom:
         odom_update();
         break;
@@ -164,8 +155,7 @@ void Ekf::main_loop()
 
 void Ekf::odom_update()
 {
-  if (!m_initialized)
-  {
+  if (!m_initialized) {
     m_last_update_time = m_odom_buffer.front()->header.stamp;
     m_initialized = true;
     std::lock_guard<std::mutex> odom_guard(m_odom_buffer_mutex);
@@ -197,8 +187,7 @@ void Ekf::odom_update()
   Eigen::Matrix<double, 2, 1> c = Eigen::Matrix<double, 2, 1>::Zero();
   Eigen::Matrix<double, 2, 1> y = Eigen::Matrix<double, 2, 1>::Zero();
   Eigen::Matrix<double, 2, 1> t = Eigen::Matrix<double, 2, 1>::Zero();
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     y = Z_predicted.col(i) * m_weights_m(i) - c;
     t = z_predicted + y;
     c = (t - z_predicted) - y;
@@ -208,12 +197,11 @@ void Ekf::odom_update()
 
   // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
   Eigen::Matrix<double, 2, 13> Z_diff;
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     Eigen::Matrix<double, 3, 3> m_imu_nose;
     Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
   }
-//  ROS_INFO_STREAM("Difference of each column of Z and z_predicted: \n" << std::setprecision(2) << Z_diff);
+  //  ROS_INFO_STREAM("Difference of each column of Z and z_predicted: \n" << std::setprecision(2) << Z_diff);
   Eigen::Matrix<double, 13, 13> weight_c_matrix = m_weights_c.asDiagonal();
   //  ROS_INFO_STREAM("Weight matrix m_weights_c: \n" << std::setprecision(2) << weight_c_matrix);
   //  ROS_INFO_STREAM("Odometry noise: \n" << std::setprecision(2) << m_odom_noise);
@@ -223,44 +211,45 @@ void Ekf::odom_update()
 
   // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
   Eigen::Matrix<double, 6, 13> sigma_diff;
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     sigma_diff.col(i) = sigma_points.col(i) - m_mu_predicted;
   }
   //  ROS_INFO_STREAM("Sigma points after recalculation: \n" << std::setprecision(2) << sigma_points);
   //  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
-//  ROS_INFO_STREAM("Difference between each sigma point and m_mu_predicted: \n" << std::setprecision(2) <<
-//  sigma_diff);
-//  Eigen::Matrix<double, 6, 2> cross_correlation = sigma_diff * weight_c_matrix * Z_diff.transpose();
+  //  ROS_INFO_STREAM("Difference between each sigma point and m_mu_predicted: \n" << std::setprecision(2) <<
+  //  sigma_diff);
+  //  Eigen::Matrix<double, 6, 2> cross_correlation = sigma_diff * weight_c_matrix * Z_diff.transpose();
   Eigen::Matrix<double, 6, 2> cross_correlation = Eigen::Matrix<double, 6, 2>::Zero();
-  for (int i = 1; i < 6; ++i)
-  {
+  for (int i = 1; i < 6; ++i) {
     cross_correlation += m_weights_c(i) * sigma_diff.col(i) * Z_diff.col(i).transpose() +
                          m_weights_c(i) * sigma_diff.col(i + 6) * Z_diff.col(i + 6).transpose();
   }
   cross_correlation += m_weights_c(0) * sigma_diff.col(0) * Z_diff.col(0).transpose();
 
-//  ROS_INFO_STREAM("Cross Correlation: \n" << std::setprecision(2) << cross_correlation);
-//  ROS_INFO_STREAM("S: \n" << std::setprecision(2) << S);
-//  ROS_INFO_STREAM("S inverse: \n" << std::setprecision(2) << S.inverse());
+  //  ROS_INFO_STREAM("Cross Correlation: \n" << std::setprecision(2) << cross_correlation);
+  //  ROS_INFO_STREAM("S: \n" << std::setprecision(2) << S);
+  //  ROS_INFO_STREAM("S inverse: \n" << std::setprecision(2) << S.inverse());
 
   // 7. Compute Kalman Gain. K = T S^-1
   Eigen::Matrix<double, 6, 2> kalman_gain = cross_correlation * S.inverse();
 
   //  ROS_INFO_STREAM("m_mu_predicted: \n" << std::setprecision(2) << m_mu_predicted);
-//  ROS_INFO_STREAM("====== Kalman gain: ==========\n" << std::setprecision(2) << kalman_gain);
+  //  ROS_INFO_STREAM("====== Kalman gain: ==========\n" << std::setprecision(2) << kalman_gain);
   ROS_INFO_STREAM("\n========== Sensor ==========\n" << std::setprecision(2) << sensor);
-//  ROS_INFO_STREAM("========== z_predicted ==========\n" << std::setprecision(2) << z_predicted);
+  //  ROS_INFO_STREAM("========== z_predicted ==========\n" << std::setprecision(2) << z_predicted);
   ROS_INFO_STREAM("========== Sensor - z_predicted ===========\n" << std::setprecision(2) << (sensor - z_predicted));
   ROS_INFO_STREAM("========== Kalman * diff ===========\n"
-                  << std::setprecision(2) << (kalman_gain * (sensor - z_predicted)).transpose());
+                      << std::setprecision(2) << (kalman_gain * (sensor - z_predicted)).transpose());
   // 8. Compute corrected mean. μ_corrected = μ_predicted + K(z_observed - z_predicted)
   m_state = m_mu_predicted + kalman_gain * (sensor - z_predicted);
 
   ROS_INFO_STREAM("\n\n==========Final state===========\n" << std::setprecision(2) << m_state.transpose());
 
   // 9. Compute corrected covariance. Sigma = Simga_predicted - K S K^T
-  m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose();
+  // m_covariance = m_covar_predicted - kalman_gain * S * kalman_gain.transpose(); // Normal form
+  // Joseph form below: Sigma_predicted - Kalman * cross_correlation^T - cross_correlation * Kalman^T + K S K^T
+  m_covariance = m_covar_predicted - kalman_gain * cross_correlation.transpose() -
+                 cross_correlation * kalman_gain.transpose() + kalman_gain * S * kalman_gain.transpose();
   ROS_INFO_STREAM("Covariance: \n" << std::setprecision(2) << m_covariance);
   m_last_update_time = m_odom_buffer.front()->header.stamp;
 
@@ -320,16 +309,14 @@ void Ekf::imu_update()
 
   // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
   Eigen::Matrix<double, 4, 13> Z_diff;
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
   }
   Eigen::Matrix<double, 4, 4> S = Z_diff * m_weights_c.asDiagonal() * Z_diff.transpose() + m_imu_noise;
 
   // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
   Eigen::Matrix<double, 6, 13> sigma_diff;
-  for (int i = 0; i < 6; i++)
-  {
+  for (int i = 0; i < 6; i++) {
     sigma_points.col(i) - m_mu_predicted;
   }
   Eigen::Matrix<double, 6, 4> cross_corelation = sigma_diff * m_weights_c.asDiagonal() * Z_diff.transpose();
@@ -393,16 +380,14 @@ void Ekf::gps_update()
 
   // 5. Compute uncertainty in transform + observation uncertainty. S = (Z - z) * w * (Z - z)^T + Q
   Eigen::Matrix<double, 3, 13> Z_diff;
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     Z_diff.col(i) = Z_predicted.col(i) - z_predicted;
   }
   Eigen::Matrix<double, 3, 3> S = Z_diff * m_weights_c.asDiagonal() * Z_diff.transpose() + m_gps_noise;
 
   // 6. Compute cross co-relation matrix between state and measurement space. T = (χ - μ) (Z - z)^T * w
   Eigen::Matrix<double, 6, 13> sigma_diff;
-  for (int i = 0; i < 6; i++)
-  {
+  for (int i = 0; i < 6; i++) {
     sigma_points.col(i) - m_mu_predicted;
   }
   Eigen::Matrix<double, 6, 3> cross_corelation = sigma_diff * m_weights_c.asDiagonal() * Z_diff.transpose();
@@ -448,7 +433,7 @@ void Ekf::compute_gps_diff(const sensor_msgs::NavSatFixConstPtr &gps)
 inline void Ekf::recalculate_sigma_points(Eigen::Matrix<double, 6, 13> &sigma)
 {
   // Calculate offset = gamma * sqrt(covariance) through Cholesky decomposition
-  Matrix6d offset{ ((m_state_dims + m_lambda)*m_covar_predicted).llt().matrixL() };
+  Matrix6d offset{((m_state_dims + m_lambda) * m_covar_predicted).llt().matrixL()};
   Matrix6d stacked_mu_predicted;
   stacked_mu_predicted << m_mu_predicted, m_mu_predicted, m_mu_predicted, m_mu_predicted, m_mu_predicted,
       m_mu_predicted;
@@ -499,8 +484,7 @@ void Ekf::prediction_step(const ros::Time &target_time)
   // ------------------------------------------------------------ Debug ----------------------------------------
   std::stringbuf str;
   std::ostream stream(&str);
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     stream << std::setprecision(10) << sigma_star(0, i) << " * " << m_weights_m(i) << " + ";
   }
   ROS_INFO_STREAM("Equation: " << str.str());
@@ -513,20 +497,19 @@ void Ekf::prediction_step(const ros::Time &target_time)
   Eigen::Matrix<double, 6, 1> c = Eigen::Matrix<double, 6, 1>::Zero();
   Eigen::Matrix<double, 6, 1> y = Eigen::Matrix<double, 6, 1>::Zero();
   Eigen::Matrix<double, 6, 1> t = Eigen::Matrix<double, 6, 1>::Zero();
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     y = sigma_star.col(i) * m_weights_m(i) - c;
     t = m_mu_predicted + y;
     c = (t - m_mu_predicted) - y;
     m_mu_predicted = t;
   }
 
-//  for (int i = 0; i < 6; ++i)
-//  {
-//    m_mu_predicted =
-//        m_mu_predicted + ((sigma_star.col(i + 1) * m_weights_m(i + 1)) + (sigma_star.col(i + 7) * m_weights_m(i + 7)));
-//  }
-//  m_mu_predicted = m_mu_predicted + (sigma_star.col(0) * m_weights_m(0));
+  //  for (int i = 0; i < 6; ++i)
+  //  {
+  //    m_mu_predicted =
+  //        m_mu_predicted + ((sigma_star.col(i + 1) * m_weights_m(i + 1)) + (sigma_star.col(i + 7) * m_weights_m(i + 7)));
+  //  }
+  //  m_mu_predicted = m_mu_predicted + (sigma_star.col(0) * m_weights_m(0));
 
   //  m_mu_predicted = sigma_star * m_weights_m;
   //  ROS_INFO_STREAM("m_weights_m: \n" << std::setprecision(2) << m_weights_m);
@@ -534,15 +517,14 @@ void Ekf::prediction_step(const ros::Time &target_time)
 
   // Calculate predicted covariance
   m_covar_predicted.setZero();
-  for (int i = 0; i < 13; i++)
-  {
+  for (int i = 0; i < 13; i++) {
     m_covar_predicted +=
         m_weights_c(i) * (sigma_star.col(i) - m_mu_predicted) * (sigma_star.col(i) - m_mu_predicted).transpose();
   }
   // Calculate process noise and not just yeet it
   calculate_process_noise(dt.toSec());
 
-//  ROS_INFO_STREAM("========== process noise: ==========\n" << std::setprecision(2) << m_noise_predict);
+  //  ROS_INFO_STREAM("========== process noise: ==========\n" << std::setprecision(2) << m_noise_predict);
   m_covar_predicted = m_covar_predicted + m_noise_predict;
   ROS_INFO_STREAM("========== m_covariance_predicted: ==========\n" << std::setprecision(2) << m_covar_predicted);
 }
@@ -617,26 +599,19 @@ void Ekf::motion_model(const ros::Duration &dt, const Eigen::Matrix<double, 6, 1
 
 Ekf::Sensor Ekf::next_sensor()
 {
-  if (m_gps_buffer.empty() || m_imu_buffer.empty() || m_odom_buffer.empty())
-  {
-    if (m_gps_buffer.empty() && m_imu_buffer.empty() && !m_odom_buffer.empty())
-    {
+  if (m_gps_buffer.empty() || m_imu_buffer.empty() || m_odom_buffer.empty()) {
+    if (m_gps_buffer.empty() && m_imu_buffer.empty() && !m_odom_buffer.empty()) {
       return Sensor::odom;
     }
     return Sensor::none;
   }
   if (STAMP(m_odom_buffer.front()) < STAMP(m_imu_buffer.front()) &&
-      STAMP(m_odom_buffer.front()) < STAMP(m_gps_buffer.front()))
-  {
+      STAMP(m_odom_buffer.front()) < STAMP(m_gps_buffer.front())) {
     return Sensor::odom;
-  }
-  else if (STAMP(m_imu_buffer.front()) < STAMP(m_odom_buffer.front()) &&
-           STAMP(m_imu_buffer.front()) < STAMP(m_gps_buffer.front()))
-  {
+  } else if (STAMP(m_imu_buffer.front()) < STAMP(m_odom_buffer.front()) &&
+             STAMP(m_imu_buffer.front()) < STAMP(m_gps_buffer.front())) {
     return Sensor::imu;
-  }
-  else
-  {
+  } else {
     return Sensor::gps;
   }
 }
@@ -648,11 +623,11 @@ void Ekf::publish_pose() const
   tf::Matrix3x3 rot;
   // x y v a theta theta'
   rot.setRPY(0, 0, m_state(4));
-  tf::Vector3 coords{ m_state(0), m_state(1), 0 };
+  tf::Vector3 coords{m_state(0), m_state(1), 0};
   tf::Transform transform;
   transform.setBasis(rot);
   transform.setOrigin(coords);
-  br.sendTransform(tf::StampedTransform{ transform, ros::Time::now(), m_odom_frame, m_base_frame });
+  br.sendTransform(tf::StampedTransform{transform, ros::Time::now(), m_odom_frame, m_base_frame});
 
   // Publish odom msg
   nav_msgs::Odometry odom_msg{};
@@ -666,12 +641,12 @@ void Ekf::publish_pose() const
   odom_msg.pose.pose.orientation.z = quat.getZ();
   odom_msg.pose.pose.orientation.w = quat.getW();
   odom_msg.pose.covariance = {
-      m_covariance(0,0), m_covariance(0, 1), 0, 0, 0, m_covariance(0, 4),
-      m_covariance(1,0), m_covariance(1, 1), 0, 0, 0, m_covariance(1, 4),
+      m_covariance(0, 0), m_covariance(0, 1), 0, 0, 0, m_covariance(0, 4),
+      m_covariance(1, 0), m_covariance(1, 1), 0, 0, 0, m_covariance(1, 4),
       0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0,
-      m_covariance(4,0), m_covariance(4, 1), 0, 0, 0, m_covariance(4, 4)
+      m_covariance(4, 0), m_covariance(4, 1), 0, 0, 0, m_covariance(4, 4)
   };
 
   odom_msg.twist.twist.angular.x = 0;
@@ -681,7 +656,7 @@ void Ekf::publish_pose() const
   odom_msg.twist.twist.linear.y = sin(m_state(4)) * m_state(2);
   odom_msg.twist.twist.linear.z = 0;
   // Fuck twist covariance
-//  odom_msg.twist.covariance = { };
+  //  odom_msg.twist.covariance = { };
   m_odom_pub.publish(odom_msg);
 }
 
