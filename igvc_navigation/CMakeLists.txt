@@ -106,9 +106,9 @@ catkin_package(
 ## Your package locations should be listed before other locations
 # include_directories(include)
 include_directories(
+  include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
-  include
 )
 
 ## Declare a cpp library
@@ -179,8 +179,7 @@ add_library(
     GraphSearch STATIC
     GraphSearch/src/Node.cpp
     GraphSearch/src/Graph.cpp
-    GraphSearch/src/PriorityQueue.cpp
-)
+    GraphSearch/src/PriorityQueue.cpp)
 add_dependencies(GraphSearch igvc_msgs_gencpp)
 # link OpenCV and cv_bridge to GraphSearch library
 target_link_libraries(GraphSearch ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
@@ -192,3 +191,4 @@ add_subdirectory(src/state_estimator)
 add_subdirectory(src/waypoint_source)
 add_subdirectory(src/wheel_odometer)
 add_subdirectory(src/d_lite_planner)
+add_subdirectory(src/ahrs)
