@@ -1,0 +1,40 @@
+octree:
+  resolution: 0.2
+  lazy_evaluation: false
+sensor_model:
+  hit: 0.8
+  miss: 0.3
+  miss_empty: 0.49
+  min: 0.03
+  max: 0.97
+  max_range: 50
+  angular_resolution: 0.01
+  lidar_miss_cast_distance: 15
+#  lidar_angle_start: -2
+#  lidar_angle_end: 2
+  lidar_angle_start: -0.5
+  lidar_angle_end: 0.5
+filter:
+  filter_angle: 2
+  distance: 3
+ground_filter:
+  enable: false
+  iterations: 200
+  distance_threshold: 0.05
+  eps_angle: 0.15
+  plane_distance: 0.04
+map:
+  # In units of meters, not cells
+  # width of grid = width / resolution
+  length: 200
+  width: 200
+  start_x: 100
+  start_y: 100
+  encoding: "CV_8UC1"
+  log_odds_default: 0
+node:
+#  lidar_topic: "/scan/pointcloud"
+  lidar_topic: "/scan/pointcloud"
+  transform_max_wait_time: 1
+  debug: true
+map_floor_threshold: 0.5

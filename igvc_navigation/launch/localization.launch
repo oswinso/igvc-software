@@ -7,7 +7,7 @@
     -->
 <launch>
 
-    <include file="$(find igvc_navigation)/launch/wheel_odometry.launch" />
+    <!--<include file="$(find igvc_navigation)/launch/wheel_odometry.launch" />-->
 
     <node pkg="robot_localization" type="navsat_transform_node" name="navsat_transform_node" respawn="true" output="screen">
 
@@ -56,11 +56,11 @@
                X velocity, Y velocity, Z velocity,
                roll velocity, pitch velocity, yaw velocity,
                X acceleration, Y acceleration, Z acceleration -->
-      <rosparam param="odom0_config">[false,  false, false,
+      <rosparam param="odom0_config">[false, false, false,
                                false, false, false,
-                               false, false, false,
-                               false, false, false,
-                               false, false, false]</rosparam>
+                               true, true, false,
+                               false, false, true,
+                               false, true, false]</rosparam>
 
       <!-- IMU -->
       <param name="imu0" value="/imu"/>
@@ -69,7 +69,7 @@
                                  false, false, true,
                                  false, false, false,
                                  false,  false,  true,
-                                 false,  false,  true]</rosparam>
+                                 true,  false,  false]</rosparam>
       <param name="imu0_differential" value="false"/>
       <param name="imu0_remove_gravitational_acceleration" value="false" />
       <param name="publish_acceleration" value="true" />

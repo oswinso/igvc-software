@@ -37,7 +37,6 @@ Madgwick_filter_node::Madgwick_filter_node(ros::NodeHandle& nh, const ros::NodeH
 void Madgwick_filter_node::callback(const sensor_msgs::Imu_<std::allocator<void>>::ConstPtr& imu_msg_raw,
                                     const sensor_msgs::MagneticField_<std::allocator<void>>::ConstPtr& mag_msg)
 {
-  ROS_INFO_STREAM("Callback called!");
   const geometry_msgs::Vector3& angular_vel = imu_msg_raw->angular_velocity;
   const geometry_msgs::Vector3& lin_accel = imu_msg_raw->linear_acceleration;
   const geometry_msgs::Vector3& mag_field = mag_msg->magnetic_field;

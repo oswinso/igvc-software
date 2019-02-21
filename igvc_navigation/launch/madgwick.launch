@@ -1,6 +1,10 @@
 
 <launch>
-    <node name="madgwick" pkg="igvc_navigation" type="madgwick" output="screen">
+    <!--<node name="madgwick" pkg="igvc_navigation" type="madgwick" output="screen">-->
+        <!--<rosparam command="load" file="$(find igvc_navigation)/launch/madgwick.yaml"/>-->
+    <!--</node>-->
+    <node name="madgwick" pkg="imu_filter_madgwick" type="imu_filter_node" output="screen">
         <rosparam command="load" file="$(find igvc_navigation)/launch/madgwick.yaml"/>
+        <remap from="/imu/data" to="/imu" />
     </node>
 </launch>
