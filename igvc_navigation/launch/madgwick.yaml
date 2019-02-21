@@ -1,0 +1,31 @@
+parameters:
+  # Gain of the filter. Higher values lead to faster convergence but more noise.
+  # Lower values lead to slower convergence but smoother signal.
+  # 0.0 to 1.0
+  gain: 0.7
+  # Gyro drift gain, -1.0 - 1.0
+  zeta: 0.0
+## -10.0 - 10.0
+#mag_bias_x: 0.0
+#mag_bias_y: 0.0
+#mag_bias_z: 0.0
+variance:
+  roll: 0.01
+  pitch: 0.01
+  yaw: 0.01
+topics:
+  imu: "/imu/raw"
+  mag: "/imu/mag"
+  output: "/imu/filtered"
+node:
+  debug: true
+  queue_size: 5
+#world_frame: "enu"
+#use_mag: true
+#use_magnetic_field_msg: true
+#fixed_frame: "odom"
+#publish_tf: false,
+#reverse_tf: false,
+#constant_dt: false,
+#publish_debug_topics: true,
+#stateless: false

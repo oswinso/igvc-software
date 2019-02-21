@@ -1,0 +1,6 @@
+
+<launch>
+    <node name="madgwick" pkg="igvc_navigation" type="madgwick" output="screen">
+        <rosparam command="load" file="$(find igvc_navigation)/launch/madgwick.yaml"/>
+    </node>
+</launch>
